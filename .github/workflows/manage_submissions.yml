@@ -1,0 +1,96 @@
+name: Manage Submissions
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+
+  manage-submission:
+    runs-on: self-hosted
+    outputs:
+      run_build: ${{ steps.detector.outputs.official_commit == 'true' && steps.detector.outputs.tag_exists == 'false' }}
+      author_name: ${{ steps.get-author.outputs.author_name }}
+      author_username: ${{ steps.get-author.outputs.author_username }}
+      author_email: ${{ steps.get-author.outputs.author_email }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Get Job URL
+        uses: ReeganExE/github-action-job-id@v1.0
+        with:
+          expose-name: false
+
+      - name: Detect Current State
+        id: detector
+        run: |
+          if [ "$(git show-ref origin/submission)" == "" ]; then
+            echo ::set-output name=branch_exists::false
+          else
+            echo ::set-output name=branch_exists::true
+          fi
+
+          if [ "$(git tag -l submitted-version)" == "" ]; then
+            echo ::set-output name=tag_exists::false
+          else
+            echo ::set-output name=tag_exists::true
+          fi
+
+          found_official_commit=false
+          for commit in $(git rev-list ${{ github.event.before}}..${{ github.event.after}}); do
+            if [[ `git show -s --format=%B $commit` =~ [Oo][Ff][Ff][Ii][Cc][Ii][Aa][Ll] ]]; then
+              found_official_commit=true
+            fi
+          done
+          echo ::set-output name=official_commit::$found_official_commit
+          echo ::set-output name=build_job_url::$GH_JOB_0_HTML_URL
+
+      - name: Get Author
+        id: get-author
+        run: |
+          echo ::set-output name=author_name::${{ github.event.head_commit.author.name }}
+          echo ::set-output name=author_username::${{ github.event.head_commit.author.username }}
+          echo ::set-output name=author_email::${{ github.event.head_commit.author.email }}
+
+      - name: Create Submission Branch
+        if: ${{ steps.detector.outputs.branch_exists == 'false' }}
+        run: |
+          git branch submission HEAD^1
+          git push --set-upstream origin submission
+
+      - name: Create Pull Request
+        if: ${{ steps.detector.outputs.branch_exists == 'false' }}
+        uses: devops-infra/action-pull-request@v0.5.0
+        with:
+          source_branch: "master"
+          target_branch: "submission"
+          title: Official assignment submission
+          body: "Add more commits to master to update this pull request. When you push a commit with the word 'official' in the commit message, the the assignment will be submitted."
+          reviewer: robustify
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge Pull Request
+        if: ${{ steps.detector.outputs.official_commit == 'true' && steps.detector.outputs.tag_exists == 'false' }}
+        run: |
+          git checkout submission
+          git merge master
+          git tag submitted-version
+          git push
+          git push --tags
+
+      - name: Inform Instructor and Student
+        if: ${{ steps.detector.outputs.official_commit == 'true' && steps.detector.outputs.tag_exists == 'false' }}
+        run: |
+          python3 /home/micho/ou/build-server-python/instructor_info.py \
+            --name "${{ steps.get-author.outputs.author_name }}" \
+            --repo_name ${{ github.event.repository.name }} \
+            --branch submission \
+            --job_url $GH_JOB_0_HTML_URL
+
+          python3 /home/micho/ou/build-server-python/student_homework5_submitted.py \
+            --name "${{ steps.get-author.outputs.author_name }}" \
+            --email ${{ steps.get-author.outputs.author_email }}
+

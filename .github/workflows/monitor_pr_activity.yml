@@ -1,0 +1,47 @@
+name: Monitor Pull Requst Activity
+
+on:
+  pull_request_review:
+    types: [ submitted ]
+
+jobs:
+
+  inform-student:
+    runs-on: self-hosted
+    if: ${{ github.event.sender.login == 'robustify' }}
+
+    steps:
+      - name: Detect Score Feedback
+        id: score-feedback
+        run: |
+          if 'final score' in """${{ github.event.review.body }}""".lower():
+            print('::set-output name=grade_submitted::true')
+          else:
+            print('::set-output name=grade_submitted::false')
+
+        shell: python3 {0}
+
+      - name: General Feedback
+        if: ${{ steps.score-feedback.outputs.grade_submitted == 'false' }}
+        run: |
+          head_sha=${{ github.event.pull_request.head.sha }}
+          author_email=$(git show -s $head_sha --format=%ae)
+          author_name=$(git show -s $head_sha --format=%an)
+          python3 /home/micho/ou/build-server-python/feedback_notification.py \
+            --name "$author_name" \
+            --repo_name ${{ github.event.repository.name }} \
+            --email $author_email \
+            --pr_url ${{ github.event.pull_request.html_url }}
+
+      - name: Grade Submitted
+        if: ${{ steps.score-feedback.outputs.grade_submitted == 'true' }}
+        run: |
+          head_sha=${{ github.event.pull_request.head.sha }}
+          author_email=$(git show -s $head_sha --format=%ae)
+          author_name=$(git show -s $head_sha --format=%an)
+          python3 /home/micho/ou/build-server-python/feedback_notification.py \
+            --name "$author_name" \
+            --repo_name ${{ github.event.repository.name }} \
+            --email $author_email \
+            --pr_url ${{ github.event.pull_request.html_url }} \
+            --grade_submitted

@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<launch>
+
+  <!-- Launch everything here! -->
+
+  <!-- Leave everything under here alone, but look at it for clues! -->
+
+  <!-- Gazebo simulation -->
+  <arg name="gazebo_scenario" default="$(find homework5)/yaml/homework5_scenario.yaml" />
+  <include file="$(find dataspeed_dbw_gazebo)/launch/dataspeed_dbw_gazebo.launch" >
+    <arg name="sim_param_file" value="$(find homework5)/yaml/homework5_sim_params.yaml" />
+    <arg name="world_name" value="$(find homework5)/worlds/homework5.world" />
+    <arg name="headless" value="false" />
+  </include>
+  <include file="$(find avs_lecture_launch)/launch/spawn_traffic.launch" >
+    <arg name="gazebo_scenario" value="$(arg gazebo_scenario)" />
+  </include>
+
+  <!-- Dataspeed ROS Driver -->
+  <include file="$(find dbw_mkz_can)/launch/dbw.launch" >
+    <arg name="live" value="false"/>
+    <arg name="can_ns" value="can_bus_dbw" />
+    <arg name="load_urdf" value="false" />
+  </include>
+
+  <!-- Enable drive-by-wire control automatically when simulation starts -->
+  <node pkg="rostopic" type="rostopic" name="enable_dbw" args="pub /vehicle/enable std_msgs/Empty -1" output="screen" />
+
+  <!-- Route network lookup -->
+  <node pkg="avs_lecture_maps" type="lookahead_generator" name="lookahead_generator" output="screen" >
+    <rosparam file="$(arg gazebo_scenario)" />
+  </node>
+
+  <!-- Adaptive cruise controller -->
+  <node pkg="avs_lecture_acc" type="avs_lecture_acc" name="acc_node" output="screen" >
+    <remap from="raw_ulc_cmd" to="trajectory_ulc_cmd" />
+  </node>
+
+  <!-- Visualize -->
+  <node pkg="avs_lecture_maps" type="gps_frame_management.py" name="gps_frame_management" >
+    <rosparam file="$(arg gazebo_scenario)" />
+  </node>
+  <arg name="rviz" default="true" />
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="perception_viz" args="-d $(find homework5)/rviz/homework5.rviz" respawn="true" />
+
+</launch>
